@@ -16,7 +16,7 @@ var example2 string
 var input string
 
 func main() {
-	exampleResult1 := part1(example2)
+	exampleResult1 := part1(example1)
 	if exampleResult1 != 123 {
 		log.Fatalf("Part 1 wrong; acutal: %d\n", exampleResult1)
 	}
