@@ -27,6 +27,7 @@ func main() {
 	if exampleResult2 != 525152 {
 		log.Fatalf("Part 2 wrong; acutal: %d\n", exampleResult2)
 	}
+	println("part 2 ok")
 	log.Printf("Part 2: %d\n", part2(input))
 
 }
@@ -43,7 +44,23 @@ func part1(input string) int {
 
 func part2(input string) int {
 	lines := strings.Split(input, "\n")
-	sum := len(lines)
+	sum := 0
+	for _, line := range lines {
+		record := parseRecord(line)
+		count1 := record.unfold(1).countArrangements()
+		count2 := record.unfold(2).countArrangements()
+		multiplier := count2 / count1
+		count5 := count1
+		for i := 0; i < 4; i++ {
+			count5 *= multiplier
+		}
+		sum += count5
+		// println("progress", i+1, "/", len(lines))
+		// for i := 1; i <= 5; i++ {
+		// 	print(record.unfold(i).countArrangements(), ",")
+		// }
+		// println()
+	}
 	return sum
 }
 
@@ -63,6 +80,17 @@ func parseRecord(s string) ConditionRecord {
 type ConditionRecord struct {
 	springs    string
 	groupSizes []int
+}
+
+func (c ConditionRecord) unfold(times int) ConditionRecord {
+	newGroupSizes := make([]int, len(c.groupSizes)*times)
+	for i := 0; i < times; i++ {
+		copy(newGroupSizes[i*len(c.groupSizes):], c.groupSizes)
+	}
+	return ConditionRecord{
+		springs:    strings.Repeat(c.springs+"?", times)[:len(c.springs)*times+times-1],
+		groupSizes: newGroupSizes,
+	}
 }
 
 func (c ConditionRecord) countArrangements() int {
