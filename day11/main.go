@@ -32,7 +32,7 @@ func main() {
 
 func part1(input string) int {
 	universe := strings.Split(input, "\n")
-	return sumOfDistances(universe, 1)
+	return sumOfDistances(universe, 2)
 }
 
 func part2(input string, expansionSize int) int {
@@ -64,12 +64,8 @@ func sumOfDistances(universe []string, expansionSize int) int {
 	sum := 0
 	for i, galaxy1 := range galaxies[:len(galaxies)-1] {
 		for _, galaxy2 := range galaxies[i+1:] {
-			rowDiff := abs(galaxy2.row-galaxy1.row) + countExpansions(rowShouldExpand, galaxy1.row, galaxy2.row)*expansionSize
-			colDiff := abs(galaxy2.col-galaxy1.col) + countExpansions(colShouldExpand, galaxy1.col, galaxy2.col)*expansionSize
-			if expansionSize > 1 {
-				rowDiff -= countExpansions(rowShouldExpand, galaxy1.row, galaxy2.row)
-				colDiff -= countExpansions(colShouldExpand, galaxy1.col, galaxy2.col)
-			}
+			rowDiff := abs(galaxy2.row-galaxy1.row) + countExpansions(rowShouldExpand, galaxy1.row, galaxy2.row)*(expansionSize-1)
+			colDiff := abs(galaxy2.col-galaxy1.col) + countExpansions(colShouldExpand, galaxy1.col, galaxy2.col)*(expansionSize-1)
 			distance := rowDiff + colDiff
 			sum += distance
 		}
