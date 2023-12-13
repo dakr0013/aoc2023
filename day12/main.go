@@ -47,19 +47,7 @@ func part2(input string) int {
 	sum := 0
 	for _, line := range lines {
 		record := parseRecord(line)
-		count1 := record.unfold(1).countArrangements()
-		count2 := record.unfold(2).countArrangements()
-		multiplier := count2 / count1
-		count5 := count1
-		for i := 0; i < 4; i++ {
-			count5 *= multiplier
-		}
-		sum += count5
-		// println("progress", i+1, "/", len(lines))
-		// for i := 1; i <= 5; i++ {
-		// 	print(record.unfold(i).countArrangements(), ",")
-		// }
-		// println()
+		sum += record.unfold(5).countArrangements()
 	}
 	return sum
 }
@@ -93,22 +81,36 @@ func (c ConditionRecord) unfold(times int) ConditionRecord {
 	}
 }
 
-func (c ConditionRecord) countArrangements() int {
-	return c.countArrangementsRec(0, 0)
+type State struct {
+	springIndex, groupIndex int
 }
 
-func (c ConditionRecord) countArrangementsRec(springIndex, groupIndex int) int {
+var cache map[State]int
+
+func (c ConditionRecord) countArrangements() int {
+	cache = make(map[State]int)
+	return c.countArrangementsRec(State{0, 0})
+}
+
+func (c ConditionRecord) countArrangementsRec(state State) int {
+	if result, ok := cache[state]; ok {
+		return result
+	}
+
+	springIndex, groupIndex := state.springIndex, state.groupIndex
 	if springIndex >= len(c.springs) {
 		if groupIndex != len(c.groupSizes) {
+			cache[state] = 0
 			return 0
 		}
+		cache[state] = 1
 		return 1
 	}
 
 	count := 0
 	switch c.springs[springIndex] {
 	case '?':
-		count += c.countArrangementsRec(springIndex+1, groupIndex)
+		count += c.countArrangementsRec(State{springIndex + 1, groupIndex})
 		fallthrough
 	case '#':
 		if groupIndex < len(c.groupSizes) {
@@ -117,12 +119,18 @@ func (c ConditionRecord) countArrangementsRec(springIndex, groupIndex int) int {
 			if springEndIndex <= len(c.springs) &&
 				(springEndIndex == len(c.springs) || c.springs[springEndIndex] == '?' || c.springs[springEndIndex] == '.') &&
 				!strings.Contains(c.springs[springIndex:springEndIndex], ".") {
-				return c.countArrangementsRec(springEndIndex+1, groupIndex+1) + count
+				result := c.countArrangementsRec(State{springEndIndex + 1, groupIndex + 1}) + count
+				cache[state] = result
+				return result
 			}
+			cache[state] = count
 			return count
 		}
+		cache[state] = count
 		return count
 	default:
-		return c.countArrangementsRec(springIndex+1, groupIndex) + count
+		result := c.countArrangementsRec(State{springIndex + 1, groupIndex}) + count
+		cache[state] = result
+		return result
 	}
 }
