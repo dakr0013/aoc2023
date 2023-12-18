@@ -27,7 +27,7 @@ func main() {
 	log.Printf("Part 1: %d\n", part1(input))
 
 	exampleResult2 := part2(example2)
-	if exampleResult2 != 94 {
+	if exampleResult2 != 71 {
 		log.Fatalf("Part 2 wrong; acutal: %d\n", exampleResult2)
 	}
 	log.Printf("Part 2: %d\n", part2(input))
@@ -38,7 +38,9 @@ func part1(input string) int {
 	heatLoss := parseHeatLoss(input)
 	start := Node{Vector{0, 0}, right, 0}
 	target := Vector{len(heatLoss) - 1, len(heatLoss[0]) - 1}
-	result, found := aStar(start, target, func(n Node) []Node {
+	result, found := aStar(start, func(n Node) bool {
+		return n.pos == target
+	}, func(n Node) []Node {
 		return n.successors(len(heatLoss)-1, len(heatLoss[0])-1)
 	}, func(n Node) int {
 		return heatLoss[n.pos.row][n.pos.col]
@@ -56,7 +58,9 @@ func part2(input string) int {
 	heatLoss := parseHeatLoss(input)
 	start := Node{Vector{0, 0}, right, 0}
 	target := Vector{len(heatLoss) - 1, len(heatLoss[0]) - 1}
-	result, found := aStar(start, target, func(n Node) []Node {
+	result, found := aStar(start, func(n Node) bool {
+		return n.pos == target && n.straightCount >= 4
+	}, func(n Node) []Node {
 		return n.ultraSuccessors(len(heatLoss)-1, len(heatLoss[0])-1)
 	}, func(n Node) int {
 		return heatLoss[n.pos.row][n.pos.col]
@@ -73,9 +77,9 @@ type successorsFunc func(n Node) []Node
 
 type weigthFunc func(n Node) int
 
-type hFunc func(n Node) int
+type isTargetFunc func(n Node) bool
 
-func aStar(start Node, targetPos Vector, successors successorsFunc, weight weigthFunc) (result int, found bool) {
+func aStar(start Node, isTarget isTargetFunc, successors successorsFunc, weight weigthFunc) (result int, found bool) {
 	g := make(map[Node]int)
 	g[start] = 0
 
@@ -96,7 +100,7 @@ func aStar(start Node, targetPos Vector, successors successorsFunc, weight weigt
 		})
 		currentNode := openList[0]
 		openList = openList[1:]
-		if currentNode.pos == targetPos {
+		if isTarget(currentNode) {
 			return g[currentNode], true
 		}
 		closedList[currentNode] = true
@@ -135,7 +139,7 @@ func (n Node) ultraSuccessors(maxRow, maxCol int) []Node {
 			successors = append(successors, straightNode)
 		}
 	}
-	if n.straightCount >= 4 {
+	if n.straightCount >= 4 || n.straightCount == 0 {
 		left := n.direction.turnLeft()
 		leftNode := Node{
 			pos:           n.pos.move(left),
