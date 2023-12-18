@@ -111,80 +111,38 @@ type DigPlan struct {
 }
 
 func (d DigPlan) lagoonArea() int {
-	size := 600
-	result := make([][]bool, size)
-	for i := range result {
-		result[i] = make([]bool, size)
-	}
-	curPos := Vector{size / 2, size / 2}
-	for _, instruction := range d.instructions {
-		for n := 0; n < instruction.distance; n++ {
-			result[curPos.row][curPos.col] = true
-			curPos = curPos.move(instruction.direction)
-		}
-	}
-
-	prevEdge := '.'
-	isInside := false
 	area := 0
-	for i := range result {
-		for j := range result[i] {
-			if result[i][j] {
-				area++
-				prevEdge, isInside = determine(prevEdge, isInside, result, i, j)
-			} else if isInside {
-				area++
-			}
+	curPos := Vector{0, 0}
+	for i, instruction := range d.instructions {
+		previousDirection := d.instructions[(i-1+len(d.instructions))%len(d.instructions)].direction
+		currentDirection := instruction.direction
+		nextDirection := d.instructions[(i+1)%len(d.instructions)].direction
+		distance := instruction.distance
+		// if edge (#) is like this (two right turns)
+		// >########
+		//  inside # outside
+		// <########
+		// then edge is actually 1 longer then distance (so each # is accounted for in area calculation)
+		if previousDirection.isRightTurn(currentDirection) && currentDirection.isRightTurn(nextDirection) {
+			distance++
 		}
-		isInside = false
-	}
 
-	return area
-}
-
-func determine(prevEdge rune, isInside bool, a [][]bool, i, j int) (rune, bool) {
-	edge := edgeType(a, isInside, i, j)
-	switch edge {
-	case '|':
-		fallthrough
-	case 'L':
-		fallthrough
-	case 'F':
-		return edge, !isInside
-	case 'J':
-		if prevEdge != 'F' {
-			return edge, !isInside
+		// check if edge (#) is like this (two left turns)
+		//         ########<
+		//  inside # outside
+		//         ########>
+		// then edge is actually 1 shorter then distance because tiles outside are 1 less then distance)
+		if previousDirection.isLeftTurn(currentDirection) && currentDirection.isLeftTurn(nextDirection) {
+			distance--
 		}
-		return edge, isInside
-	case '7':
-		if prevEdge != 'L' {
-			return edge, !isInside
-		}
-		return edge, isInside
+		nextPos := curPos.move(instruction.direction.scalarMul(distance))
+		area += ((curPos.row + nextPos.row) * (curPos.col - nextPos.col))
+		curPos = nextPos
 	}
-	return prevEdge, isInside
-}
-
-func edgeType(a [][]bool, isInside bool, i, j int) rune {
-	if a[i-1][j] && a[i+1][j] {
-		return '|'
+	if area < 0 {
+		return (-area / 2)
 	}
-	if a[i][j-1] && a[i][j+1] {
-		return '-'
-	}
-	if a[i-1][j] && a[i][j+1] {
-		return 'L'
-	}
-	if a[i-1][j] && a[i][j-1] {
-		return 'J'
-	}
-	if a[i+1][j] && a[i][j-1] {
-		return '7'
-	}
-	if a[i+1][j] && a[i][j+1] {
-		return 'F'
-	}
-	return ' '
+	return (area / 2)
 }
 
 type Instruction struct {
@@ -215,6 +173,14 @@ func (v Vector) turnRight() Vector {
 func (v Vector) turnLeft() Vector {
 	i := slices.Index(directions, v)
 	return directions[(i-1+len(directions))%len(directions)]
+}
+
+func (v Vector) isRightTurn(nextDirection Vector) bool {
+	return v.turnRight() == nextDirection
+}
+
+func (v Vector) isLeftTurn(nextDirection Vector) bool {
+	return v.turnLeft() == nextDirection
 }
 
 var directions []Vector = []Vector{up, right, down, left}
