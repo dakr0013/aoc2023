@@ -2,10 +2,12 @@ package main
 
 import (
 	_ "embed"
+	"fmt"
 	"log"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 //go:embed example1.txt
@@ -29,82 +31,69 @@ func main() {
 		log.Fatalf("Part 2 wrong; acutal: %d\n", exampleResult2)
 	}
 	log.Printf("Part 2: %d\n", part2(input))
-
 }
 
 func part1(input string) int {
-	start, workflows, parts := parseInput(input)
-	overallSumRatings := 0
-	for _, part := range parts {
-		if start.isAccepted(workflows, part) {
-			overallSumRatings += part.sumRatings()
+	start := time.Now()
+	workflows := parseWorkflows(strings.Split(input, "\n\n")[0])
+	rawParts := strings.Split(strings.Split(input, "\n\n")[1], "\n")
+
+	sum := 0
+	for _, rawPart := range rawParts {
+		part := parsePart(rawPart)
+		if workflows.get("in").accepts(part) {
+			sum += part.sumRatings()
 		}
 	}
-	return overallSumRatings
-}
-
-func part2(input string) int {
-	lines := strings.Split(input, "\n")
-	sum := len(lines)
+	elapsed := time.Since(start)
+	println("part1:", elapsed.String())
 	return sum
 }
 
-func parseInput(s string) (start Workflow, workflows map[string]Workflow, parts []Part) {
-	rawWorkflows := strings.Split(strings.Split(s, "\n\n")[0], "\n")
-	rawParts := strings.Split(strings.Split(s, "\n\n")[1], "\n")
-	parts = make([]Part, len(rawParts))
-	for i := range rawParts {
-		parts[i] = parsePart(rawParts[i])
-	}
-
-	workflows = make(map[string]Workflow)
-	for _, rawWorkflow := range rawWorkflows {
-		workflowName, workflow := parseWorkflow(rawWorkflow)
-		workflows[workflowName] = workflow
-		if workflowName == "in" {
-			start = workflow
-		}
-	}
-
-	return
+func part2(input string) int {
+	start := time.Now()
+	maxValue := 4000
+	workflows := parseWorkflows(strings.Split(input, "\n\n")[0])
+	combinationsCount := workflows.get("in").countCombinations("A", workflows, CategoryRatings{
+		IntRange{1, maxValue + 1},
+		IntRange{1, maxValue + 1},
+		IntRange{1, maxValue + 1},
+		IntRange{1, maxValue + 1},
+	})
+	elapsed := time.Since(start)
+	println("part2:", elapsed.String())
+	return combinationsCount
 }
 
-func parseWorkflow(s string) (string, Workflow) {
-	s = s[:len(s)-1]
-	name := strings.Split(s, "{")[0]
-	rawRules := strings.Split(strings.Split(s, "{")[1], ",")
-	rules := make([]Rule, len(rawRules))
-	for i := range rawRules {
-		rules[i] = parseRule(rawRules[i])
+func (this Workflow) accepts(part Part) bool {
+	if this.name == "A" {
+		return true
 	}
-	return name, Workflow{rules}
+	if this.name == "R" {
+		return false
+	}
+	for _, rule := range this.rules {
+		if rule.accepts(part) {
+			return rule.next.accepts(part)
+		}
+	}
+	return false
 }
 
-func parseRule(s string) Rule {
-	if !strings.Contains(s, ":") {
-		return func(part Part) (string, bool) { return s, true }
+func (this Rule) accepts(part Part) bool {
+	i := strings.Index("xmas", this.category)
+	switch this.op {
+	case ">":
+		return part.ratings[i] > this.value
+	case "<":
+		return part.ratings[i] < this.value
+	default:
+		return true
 	}
-	re := regexp.MustCompile("([xmas])([<>])([0-9]+)\\:([a-zA-Z]+)")
-	submatches := re.FindStringSubmatch(s)
-	ratingIndex := strings.Index("xmas", submatches[1])
-	operation := submatches[2]
-	value, _ := strconv.Atoi(submatches[3])
-	nextWorkflow := submatches[4]
+}
 
-	if operation == ">" {
-		return func(part Part) (string, bool) {
-			if part.ratings[ratingIndex] > value {
-				return nextWorkflow, true
-			}
-			return "", false
-		}
-	}
-	return func(part Part) (string, bool) {
-		if part.ratings[ratingIndex] < value {
-			return nextWorkflow, true
-		}
-		return "", false
-	}
+type Part struct {
+	ratings []int
 }
 
 func parsePart(s string) Part {
@@ -117,37 +106,6 @@ func parsePart(s string) Part {
 	return Part{ratings}
 }
 
-type Workflow struct {
-	rules []Rule
-}
-
-func (start Workflow) isAccepted(workflows map[string]Workflow, p Part) bool {
-	currentWorkflow := start
-	for {
-		next := currentWorkflow.nextWorkflow(p)
-		if next == "A" || next == "R" {
-			return next == "A"
-		}
-		currentWorkflow = workflows[next]
-	}
-}
-
-func (w Workflow) nextWorkflow(p Part) string {
-	for _, rule := range w.rules {
-		if nextWorkflow, ok := rule(p); ok {
-			return nextWorkflow
-		}
-	}
-	log.Fatalln("should never happen")
-	return ""
-}
-
-type Rule func(part Part) (string, bool)
-
-type Part struct {
-	ratings []int
-}
-
 func (p Part) sumRatings() int {
 	sum := 0
 	for i := range p.ratings {
@@ -155,3 +113,155 @@ func (p Part) sumRatings() int {
 	}
 	return sum
 }
+
+func parseWorkflows(s string) Workflows {
+	rawWorkflows := strings.Split(s, "\n")
+	workflows := make(map[string]*Workflow)
+	for _, rawWorkflow := range rawWorkflows {
+		parseWorkflow(rawWorkflow, workflows)
+	}
+	return workflows
+}
+
+func parseWorkflow(s string, workflows Workflows) {
+	s = s[:len(s)-1]
+	name := strings.Split(s, "{")[0]
+	rawRules := strings.Split(strings.Split(s, "{")[1], ",")
+	rules := make([]Rule, len(rawRules))
+	for i := range rawRules {
+		rules[i] = parseRule(rawRules[i], workflows)
+	}
+	workflows.update(name, Workflow{name, rules})
+}
+
+func parseRule(s string, workflows Workflows) Rule {
+	if !strings.Contains(s, ":") {
+		return Rule{
+			Condition: Condition{
+				category: "",
+				op:       "",
+				value:    -1,
+			},
+			next: workflows.get(s),
+		}
+	}
+
+	re := regexp.MustCompile("([xmas])([<>])([0-9]+)\\:([a-zA-Z]+)")
+	submatches := re.FindStringSubmatch(s)
+	category := submatches[1]
+	operation := submatches[2]
+	value, _ := strconv.Atoi(submatches[3])
+	nextWorkflow := submatches[4]
+
+	return Rule{
+		Condition: Condition{
+			category: category,
+			op:       operation,
+			value:    value,
+		},
+		next: workflows.get(nextWorkflow),
+	}
+}
+
+type Workflows map[string]*Workflow
+
+func (this Workflows) get(name string) *Workflow {
+	if _, ok := this[name]; !ok {
+		this[name] = &Workflow{
+			name: name,
+		}
+	}
+	return this[name]
+}
+
+func (this Workflows) update(name string, workflow Workflow) {
+	if _, ok := this[name]; !ok {
+		this[name] = &Workflow{
+			name: name,
+		}
+	}
+	this[name].name = workflow.name
+	this[name].rules = workflow.rules
+}
+
+type Workflow struct {
+	name  string
+	rules []Rule
+}
+
+func (this Workflow) countCombinations(target string, workflows Workflows, acceptsRatings CategoryRatings) int {
+	result := 0
+	prevCondition := Condition{}
+	for _, rule := range this.rules {
+		acceptsRatings = acceptsRatings.restrictReverse(prevCondition)
+		currentRuleAcceptRanges := acceptsRatings.restrict(rule.Condition)
+		if rule.next.name == target {
+			result += currentRuleAcceptRanges.combinations()
+		} else {
+			result += rule.next.countCombinations(target, workflows, currentRuleAcceptRanges)
+		}
+		prevCondition = rule.Condition
+	}
+	return result
+}
+
+type CategoryRatings []IntRange
+
+func (this CategoryRatings) String() string {
+	builder := strings.Builder{}
+	for _, r := range this {
+		builder.WriteString(fmt.Sprintf("[%d,%d)", r.start, r.end))
+	}
+	return builder.String()
+}
+
+func (this CategoryRatings) combinations() int {
+	result := 1
+	for i := range this {
+		result *= this[i].Size()
+	}
+	return result
+}
+
+func (this CategoryRatings) restrict(c Condition) CategoryRatings {
+	newRatings := make(CategoryRatings, len(this))
+	copy(newRatings, this)
+	categoryIndex := strings.Index("xmas", c.category)
+	switch c.op {
+	case ">":
+		newRatings[categoryIndex].start = c.value + 1
+	case "<":
+		newRatings[categoryIndex].end = c.value
+	}
+	return newRatings
+}
+
+func (this CategoryRatings) restrictReverse(c Condition) CategoryRatings {
+	newRatings := make(CategoryRatings, len(this))
+	copy(newRatings, this)
+	categoryIndex := strings.Index("xmas", c.category)
+	switch c.op {
+	case ">":
+		newRatings[categoryIndex].end = c.value + 1
+	case "<":
+		newRatings[categoryIndex].start = c.value
+	}
+	return newRatings
+}
+
+type Rule struct {
+	Condition
+	next *Workflow
+}
+
+type Condition struct {
+	op       string
+	value    int
+	category string
+}
+
+type IntRange struct {
+	start, end int
+}
+
+func (this IntRange) Size() int { return this.end - this.start }
