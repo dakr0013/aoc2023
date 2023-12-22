@@ -28,7 +28,7 @@ func main() {
 	log.Printf("Part 1: %d\n", part1(input))
 
 	exampleResult2 := part2(example2)
-	if exampleResult2 != 123 {
+	if exampleResult2 != 7 {
 		log.Fatalf("Part 2 wrong; acutal: %d\n", exampleResult2)
 	}
 	log.Printf("Part 2: %d\n", part2(input))
@@ -45,9 +45,12 @@ func part1(input string) int {
 }
 
 func part2(input string) int {
-	lines := strings.Split(input, "\n")
-	sum := len(lines)
-	return sum
+	startTime := time.Now()
+	snapshot := parseSnapshot(input)
+	snapshot.settleBricks()
+	result := snapshot.fallingBricksCount()
+	println("part2:", time.Since(startTime).String())
+	return result
 }
 
 func parseSnapshot(s string) Snapshot {
@@ -114,11 +117,44 @@ func (this *Brick) move(direction Vector3D) {
 }
 
 func (this Snapshot) disintegrateCount() int {
-	return len(this.bricks) - len(this.criticalBrickIds())
+	criticalBrickIds, _ := this.criticalBrickIds()
+	return len(this.bricks) - len(criticalBrickIds)
+}
+
+func (this Snapshot) fallingBricksCount() int {
+	criticalBrickIds, supportedBy := this.criticalBrickIds()
+	this.bricks.sort()
+
+	sum := 0
+	fallingBrickIds := map[int]bool{}
+	for _, id := range criticalBrickIds {
+		fallingBrickIds[id] = true
+		for _, brick := range this.bricks {
+			if containsAll(fallingBrickIds, supportedBy[brick.id]) {
+				fallingBrickIds[brick.id] = true
+			}
+		}
+		sum += len(fallingBrickIds) - 1
+		fallingBrickIds = map[int]bool{}
+	}
+
+	return sum
+}
+
+func containsAll(a, b map[int]bool) bool {
+	if len(b) == 0 {
+		return false
+	}
+	for key := range b {
+		if _, ok := a[key]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // brick is critical if it supports another brick and is the only one supporting that other brick
-func (this Snapshot) criticalBrickIds() []int {
+func (this Snapshot) criticalBrickIds() ([]int, map[int]map[int]bool) {
 	blocks := make([][][]int, 10)
 	for x := range blocks {
 		blocks[x] = make([][]int, 10)
@@ -143,7 +179,6 @@ func (this Snapshot) criticalBrickIds() []int {
 			if blockIdBelow != 0 {
 				isSupportedBy[brick.id][blockIdBelow] = true
 			}
-
 		}
 	}
 
@@ -155,7 +190,7 @@ func (this Snapshot) criticalBrickIds() []int {
 		}
 	}
 
-	return maps.Keys(criticalBrickIds)
+	return maps.Keys(criticalBrickIds), isSupportedBy
 }
 
 type Bricks []*Brick
