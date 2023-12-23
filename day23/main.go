@@ -20,87 +20,171 @@ var example2 string
 var input string
 
 func main() {
-	exampleResult1 := part1(example1)
+	exampleResult1 := solve(example1, 1)
 	if exampleResult1 != 94 {
 		log.Fatalf("Part 1 wrong; acutal: %d\n", exampleResult1)
 	}
-	log.Printf("Part 1: %d\n", part1(input))
+	log.Printf("Part 1: %d\n", solve(input, 1))
 
-	exampleResult2 := part2(example2)
+	exampleResult2 := solve(example2, 2)
 	if exampleResult2 != 154 {
 		log.Fatalf("Part 2 wrong; acutal: %d\n", exampleResult2)
 	}
-	log.Printf("Part 2: %d\n", part2(input))
-
+	log.Printf("Part 2: %d\n", solve(input, 2))
 }
 
-func part1(input string) int {
+func solve(input string, part int) int {
+	ignoreSlopes := part == 2
+
 	startTime := time.Now()
 	lines := strings.Split(input, "\n")
-	result, ok := longestPath(Position{Vector{0, 1}, down}, Vector{len(lines) - 1, len(lines) - 2}, lines, map[Vector]bool{}, true)
+	start := Vector{0, 1}
+	end := Vector{len(lines) - 1, len(lines) - 2}
+	graph := buildGraph(lines, start, end, ignoreSlopes)
+
+	result, ok := longestDistance(graph.get(start), graph.get(end), map[*Node]bool{})
+	println("part", part, ":", time.Since(startTime).String())
 	if !ok {
-		log.Fatalln("no path found")
+		println("path not found")
 	}
-	println("part1:", time.Since(startTime).String())
 	return result
 }
 
-func part2(input string) int {
-	startTime := time.Now()
-	lines := strings.Split(input, "\n")
-	result, ok := longestPath(Position{Vector{0, 1}, down}, Vector{len(lines) - 1, len(lines) - 2}, lines, map[Vector]bool{}, false)
-	if !ok {
-		log.Fatalln("no path found")
-	}
-	println("part2:", time.Since(startTime).String())
-	return result
-}
-
-func longestPath(curPos Position, end Vector, tiles []string, visitedTiles map[Vector]bool, withSlopes bool) (int, bool) {
-	if curPos.position == end {
+func longestDistance(current *Node, target *Node, visitedNodes map[*Node]bool) (int, bool) {
+	if current == target {
 		return 0, true
 	}
-
-	newVisitedTiles := maps.Clone(visitedTiles)
-	newVisitedTiles[curPos.position] = true
-
-	nextPositions := []Position{}
-	if next, ok := nextPosition(curPos, curPos.direction.turnLeft(), tiles, visitedTiles, withSlopes); ok {
-		nextPositions = append(nextPositions, next)
-	}
-	if next, ok := nextPosition(curPos, curPos.direction.turnRight(), tiles, visitedTiles, withSlopes); ok {
-		nextPositions = append(nextPositions, next)
-	}
-	if next, ok := nextPosition(curPos, curPos.direction, tiles, visitedTiles, withSlopes); ok {
-		nextPositions = append(nextPositions, next)
-	}
-
-	if len(nextPositions) == 0 {
+	if visitedNodes[current] {
 		return 0, false
 	}
-	maxDistance, valid := 0, false
-	for _, nextPos := range nextPositions {
-		if distance, ok := longestPath(nextPos, end, tiles, newVisitedTiles, withSlopes); ok && distance >= maxDistance {
-			maxDistance = distance
-			valid = true
+
+	newVisitedNodes := maps.Clone(visitedNodes)
+	newVisitedNodes[current] = true
+
+	maxDistance := 0
+	isValid := false
+	for next, dstCurrentToNext := range current.neighbors {
+		dstNextToTarget, ok := longestDistance(next, target, newVisitedNodes)
+		newDistance := dstCurrentToNext + dstNextToTarget
+		if ok && newDistance >= maxDistance {
+			maxDistance = newDistance
+			isValid = true
 		}
 	}
 
-	return maxDistance + 1, valid
-
+	return maxDistance, isValid
 }
 
-func nextPosition(curPos Position, direction Vector, tiles []string, visitedTiles map[Vector]bool, withSlopes bool) (Position, bool) {
-	nextPos := curPos.position.move(direction)
-	nextTile := tiles[nextPos.row][nextPos.col]
-	if nextTile == '#' ||
-		visitedTiles[nextPos] ||
-		nextTile == '>' && direction != right && withSlopes ||
-		nextTile == 'v' && direction != down && withSlopes {
-		return curPos, false
-	}
+type Node struct {
+	pos        Vector
+	discovered bool
+	neighbors  map[*Node]int
+}
 
-	return Position{nextPos, direction}, true
+type Nodes map[Vector]*Node
+
+func (this Nodes) get(v Vector) *Node {
+	if _, ok := this[v]; !ok {
+		this[v] = &Node{
+			pos:       v,
+			neighbors: map[*Node]int{},
+		}
+	}
+	return this[v]
+}
+
+func buildGraph(tiles []string, start Vector, end Vector, ignoreSlopes bool) Nodes {
+	nodes := Nodes{}
+	nodes.get(end).discovered = true
+
+	toDiscover := []Position{{start, down}}
+	for len(toDiscover) != 0 {
+		curPos := toDiscover[0]
+		toDiscover = toDiscover[1:]
+		currentNode := nodes.get(curPos.position)
+		currentNode.discovered = true
+
+		directions := []Vector{
+			curPos.direction,
+			curPos.direction.turnLeft(),
+			curPos.direction.turnRight(),
+		}
+
+		for _, direction := range directions {
+			neighbor, distance, isValid := Position{curPos.position.move(direction), direction}.discoverNode(tiles, ignoreSlopes)
+			if isValid {
+				neighborNode := nodes.get(neighbor.position)
+				currentNode.neighbors[neighborNode] = distance + 1
+				if ignoreSlopes {
+					neighborNode.neighbors[currentNode] = distance + 1
+				}
+				if !neighborNode.discovered {
+					toDiscover = append(toDiscover, neighbor)
+				}
+			}
+		}
+	}
+	return nodes
+}
+
+func (this Position) next(direction Vector, tiles []string) (Position, bool) {
+	nextPos := this.position.move(direction)
+	nextTile := tiles[nextPos.row][nextPos.col]
+	if nextTile != '#' {
+		return Position{nextPos, direction}, true
+	}
+	return Position{nextPos, direction}, false
+}
+
+func (this Position) discoverNode(tiles []string, ignoreSlopes bool) (Position, int, bool) {
+	current := this
+	distance := 0
+	start := Vector{0, 1}
+	end := Vector{len(tiles) - 1, len(tiles) - 2}
+
+	for {
+		if current.position == start || current.position == end {
+			return current, distance, true
+		}
+
+		if current.position.row < 0 || current.position.row >= len(tiles) ||
+			current.position.col < 0 || current.position.col >= len(tiles) {
+			return current, distance, false
+		}
+
+		currentTile := tiles[current.position.row][current.position.col]
+		if currentTile == '#' {
+			return current, distance, false
+		}
+		if !ignoreSlopes && currentTile == '>' && current.direction != right {
+			return current, distance, false
+		}
+		if !ignoreSlopes && currentTile == 'v' && current.direction != down {
+			return current, distance, false
+		}
+
+		nextPositions := []Position{}
+		if next, ok := current.next(current.direction.turnLeft(), tiles); ok {
+			nextPositions = append(nextPositions, next)
+		}
+		if next, ok := current.next(current.direction.turnRight(), tiles); ok {
+			nextPositions = append(nextPositions, next)
+		}
+		if next, ok := current.next(current.direction, tiles); ok {
+			nextPositions = append(nextPositions, next)
+		}
+
+		validMovesCount := len(nextPositions)
+		if validMovesCount >= 2 {
+			return current, distance, true
+		}
+		if validMovesCount == 0 {
+			return current, distance, false
+		}
+
+		distance++
+		current = nextPositions[0]
+	}
 }
 
 type Position struct {
