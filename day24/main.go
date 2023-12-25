@@ -6,8 +6,13 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
+	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
+	"text/template"
+	"time"
 )
 
 //go:embed example1.txt
@@ -20,6 +25,11 @@ var example2 string
 var input string
 
 func main() {
+	// wrong: 71071
+	// wrong: 113734
+	// wrong: 113735
+	// wrong: 5286803200
+	// wrong: 5286803201
 	exampleResult1 := part1(example1, 7, 27)
 	if exampleResult1 != 2 {
 		log.Fatalf("Part 1 wrong; acutal: %d\n", exampleResult1)
@@ -27,22 +37,87 @@ func main() {
 	log.Printf("Part 1: %d\n", part1(input, 200000000000000, 400000000000000))
 
 	exampleResult2 := part2(example2)
-	if exampleResult2 != 123 {
+	if exampleResult2 != 47 {
 		log.Fatalf("Part 2 wrong; acutal: %d\n", exampleResult2)
 	}
 	log.Printf("Part 2: %d\n", part2(input))
-
 }
 
 func part1(input string, from, to float64) int {
+	startTime := time.Now()
 	lines := parseLines(input, true)
-	return countIntersections(lines, from, to)
+	result := countIntersections(lines, from, to)
+	println("part1:", time.Since(startTime).String())
+	return result
+}
+
+type TemplateData struct {
+	Variables []string
+	Equations []string
 }
 
 func part2(input string) int {
-	lines := strings.Split(input, "\n")
-	sum := len(lines)
-	return sum
+	startTime := time.Now()
+	lines := parseLines(input, false)
+
+	// need to solve nonlinear equations with 9 vars (6 for px,py,pz,vx,vy,vz of rock; 3 for t1,t2,t3 the times at which rock collides with 3 hails)
+	// additionally adding check that t1-t3 are >0 (collision in the future)
+	// using python z3-solver for this
+
+	variables := []string{"px", "py", "pz", "vx", "vy", "vz"}
+	equations := []string{}
+	for i, line := range lines[0:3] {
+		tVar := fmt.Sprintf("t%d", i+1)
+		variables = append(variables, tVar)
+		equations = append(equations, fmt.Sprintf("0 == px + %s*(vx-(%.f)) - (%.f)", tVar, line.v.x, line.p.x))
+		equations = append(equations, fmt.Sprintf("0 == py + %s*(vy-(%.f)) - (%.f)", tVar, line.v.y, line.p.y))
+		equations = append(equations, fmt.Sprintf("0 == pz + %s*(vz-(%.f)) - (%.f)", tVar, line.v.z, line.p.z))
+		equations = append(equations, fmt.Sprintf("%s > 0", tVar))
+	}
+	templateData := TemplateData{variables, equations}
+
+	pythonTemplate := `from z3 import *
+{{- range $variable := .Variables }}
+{{ $variable }} = Int("{{ $variable }}")
+{{- end }}
+solve({{range $eq := .Equations }}{{ $eq }},{{ end }})
+`
+	tpl, err := template.New("pythonTemplate").Parse(pythonTemplate)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	pythonFileName := "z3_generated.py"
+	pythonFile, err := os.Create(pythonFileName)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer pythonFile.Close()
+
+	err = tpl.Execute(pythonFile, templateData)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	cmd := exec.Command("python", pythonFileName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Fatalln(err, string(output))
+	}
+
+	result := string(output)
+	println("Result of solving:")
+	println(result)
+	re := regexp.MustCompile("(?:px|py|pz) = (-?[0-9]+)")
+	submatches := re.FindAllStringSubmatch(result, 3)
+	sumPxPyPz := 0
+	for _, submatch := range submatches {
+		num, _ := strconv.Atoi(submatch[1])
+		sumPxPyPz += num
+	}
+
+	println("part2:", time.Since(startTime).String())
+	return sumPxPyPz
 }
 
 func countIntersections(lines []Line, from, to float64) int {
@@ -51,45 +126,27 @@ func countIntersections(lines []Line, from, to float64) int {
 		for j := i + 1; j < len(lines); j++ {
 			f := lines[i]
 			g := lines[j]
-			println("--")
-			println(f.String())
-			println(g.String())
 			if f.isParallelTo(g) {
-				println("lines are parallel")
 				if f.isIdentical(g) {
-					println("lines are identical")
 					t := (f.p.x - g.p.x) / (g.v.x - f.v.x)
 					if t > 0 {
 						intersection := f.call(t)
 						if intersection.isWithin(from, to) {
 							count++
-							fmt.Printf("Paths will cross inside test area %s\n", intersection)
-						} else {
-							fmt.Printf("Paths will cross ouside test area %s\n", intersection)
 						}
-					} else if !f.call(t).equals(g.call(t)) {
-						fmt.Printf("Paths will never cross\n")
-					} else if t < 0 {
-						fmt.Printf("Paths crossed in the past\n")
 					}
 				}
 				continue
 			}
 			isSkew, t1, t2 := f.isSkew(g)
 			if isSkew {
-				println("lines are skew")
 				continue
 			}
 			if t1 >= 0 && t2 >= 0 {
 				intersection := f.call(t1)
 				if intersection.isWithin(from, to) {
 					count++
-					fmt.Printf("Paths will cross inside test area %s\n", intersection)
-				} else {
-					fmt.Printf("Paths will cross ouside test area %s\n", intersection)
 				}
-			} else {
-				fmt.Printf("Paths crossed in the past\n")
 			}
 		}
 	}
@@ -145,7 +202,7 @@ func (f Line) isParallelTo(g Line) bool {
 
 func (f Line) isIdentical(g Line) bool {
 	lambda := (f.p.x - g.p.x) / g.v.x
-	return math.Abs(f.p.y-(g.p.y+lambda*g.v.y)) < 1e-9 && math.Abs(f.p.z-(g.p.z+lambda*g.v.z)) < 1e-9
+	return math.Abs(f.p.y-(g.p.y+lambda*g.v.y)) < 1e-6 && math.Abs(f.p.z-(g.p.z+lambda*g.v.z)) < 1e-6
 }
 
 func (f Line) isSkew(g Line) (isSkew bool, lambda float64, my float64) {
@@ -159,7 +216,7 @@ func (f Line) isSkew(g Line) (isSkew bool, lambda float64, my float64) {
 	}
 	lambda = result[0]
 	my = result[1]
-	isSkew = math.Abs((f.p.z+lambda*f.v.z)-(g.p.z+my*g.v.z)) > 1e-9
+	isSkew = math.Abs((f.p.z+lambda*f.v.z)-(g.p.z+my*g.v.z)) > 1e-6
 	return
 }
 
@@ -172,9 +229,9 @@ func (v Vector3D) String() string {
 }
 
 func (v1 Vector3D) equals(v2 Vector3D) bool {
-	return math.Abs(v1.x-v2.x) < 1e-9 &&
-		math.Abs(v1.y-v2.y) < 1e-9 &&
-		math.Abs(v1.z-v2.z) < 1e-9
+	return math.Abs(v1.x-v2.x) < 1e-6 &&
+		math.Abs(v1.y-v2.y) < 1e-6 &&
+		math.Abs(v1.z-v2.z) < 1e-6
 }
 
 func (v Vector3D) isWithin(from, to float64) bool {
