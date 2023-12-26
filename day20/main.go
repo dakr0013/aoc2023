@@ -3,7 +3,10 @@ package main
 import (
 	_ "embed"
 	"log"
+	"regexp"
 	"strings"
+
+	"golang.org/x/exp/maps"
 )
 
 //go:embed example1.txt
@@ -21,11 +24,6 @@ func main() {
 		log.Fatalf("Part 1 wrong; acutal: %d\n", exampleResult1)
 	}
 	log.Printf("Part 1: %d\n", part1(input))
-
-	exampleResult2 := part2(example2)
-	if exampleResult2 != 123 {
-		log.Fatalf("Part 2 wrong; acutal: %d\n", exampleResult2)
-	}
 	log.Printf("Part 2: %d\n", part2(input))
 }
 
@@ -44,10 +42,33 @@ func part1(input string) int {
 	return lowPulseCount * highPulseCount
 }
 
+// module which ouputs rx is &
+// 1. check each of its inputs individually how many button presses it takes for a high pulse
+// 2. take least common multiple of those counts (high pulses occur at fixed intervals)
 func part2(input string) int {
-	lines := strings.Split(input, "\n")
-	sum := len(lines)
-	return sum
+	modules := parseModules(input)
+	re := regexp.MustCompile("(..) -> rx")
+	targetModuleName := re.FindStringSubmatch(input)[1]
+	targetModule := modules[targetModuleName].(*ConjunctionModule)
+
+	targetModuleInputs := maps.Keys(targetModule.currentInputs)
+
+	buttonPressCount := 0
+	counts := map[string]int{}
+	for {
+		buttonPressCount++
+		pushButton(modules)
+		for _, name := range targetModuleInputs {
+			if _, ok := counts[name]; !ok && modules[name].HighPulseCount() == 1 {
+				counts[name] = buttonPressCount
+			}
+		}
+		if len(counts) == len(targetModuleInputs) {
+			break
+		}
+	}
+
+	return lcm(maps.Values(counts)...)
 }
 
 func pushButton(modules map[string]Module) {
@@ -239,4 +260,57 @@ func allHigh(inputs map[string]bool) bool {
 		}
 	}
 	return result
+}
+
+// greatest common divisor
+func gcd(nums ...int) int {
+	if len(nums) == 1 {
+		return nums[0]
+	}
+	a := nums[0]
+	if len(nums) == 2 {
+		b := nums[1]
+		if a == 0 {
+			return b
+		}
+		for b != 0 {
+			if a > b {
+				a = a - b
+			} else {
+				b = b - a
+			}
+		}
+		return a
+	}
+
+	overallGcd := gcd(a, nums[1])
+	for _, num := range nums[2:] {
+		overallGcd = gcd(overallGcd, num)
+	}
+	return overallGcd
+}
+
+// least common multiple
+func lcm(nums ...int) int {
+	if len(nums) == 1 {
+		return nums[0]
+	}
+	a := nums[0]
+	if len(nums) == 2 {
+		b := nums[1]
+		return abs((a / gcd(a, b)) * b)
+	}
+
+	overallLcm := lcm(a, nums[1])
+	for _, num := range nums[2:] {
+		overallLcm = lcm(overallLcm, num)
+	}
+	return overallLcm
+}
+
+func abs(a int) int {
+	if a < 0 {
+		return -a
+	}
+	return a
 }
